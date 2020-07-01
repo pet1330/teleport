@@ -888,7 +888,12 @@ func (tc *TeleportClient) getTargetNodes(ctx context.Context, proxy *ProxyClient
 			return nil, trace.Wrap(err)
 		}
 		for i := 0; i < len(nodes); i++ {
-			retval = append(retval, nodes[i].GetAddr())
+			addr := nodes[i].GetAddr()
+			if addr == "" {
+				// address is empty, try dialing by UUID instead.
+				addr = fmt.Sprintf("%s:0", nodes[i].GetName())
+			}
+			retval = append(retval, addr)
 		}
 	}
 	if len(nodes) == 0 {
@@ -1114,9 +1119,14 @@ func (tc *TeleportClient) Join(ctx context.Context, namespace string, sessionID 
 	if node == nil {
 		return trace.NotFound(notFoundErrorMessage)
 	}
+	target := node.GetAddr()
+	if target == "" {
+		// address is empty, try dialing by UUID instead
+		target = fmt.Sprintf("%s:0", serverID)
+	}
 	// connect to server:
 	nc, err := proxyClient.ConnectToNode(ctx, NodeAddr{
-		Addr:      node.GetAddr(),
+		Addr:      target,
 		Namespace: tc.Namespace,
 		Cluster:   tc.SiteName,
 	}, tc.Config.HostLogin, false)
@@ -2265,7 +2275,11 @@ func (tc *TeleportClient) getServerVersion(nodeClient *NodeClient) (string, erro
 
 // passwordFromConsole reads from stdin without echoing typed characters to stdout
 func passwordFromConsole() (string, error) {
-	fd := syscall.Stdin
+	// syscall.Stdin is not an int on windows. The linter will complain only on
+	// linux where syscall.Stdin is an int.
+	//
+	// nolint:unconvert
+	fd := int(syscall.Stdin)
 	state, err := terminal.GetState(fd)
 
 	// intercept Ctr+C and restore terminal
@@ -2419,6 +2433,12 @@ func ParseDynamicPortForwardSpec(spec []string) (DynamicForwardedPorts, error) {
 	result := make(DynamicForwardedPorts, 0, len(spec))
 
 	for _, str := range spec {
+		// Check whether this is only the port number, like "1080".
+		// net.SplitHostPort would fail on that unless there's a colon in
+		// front.
+		if !strings.Contains(str, ":") {
+			str = ":" + str
+		}
 		host, port, err := net.SplitHostPort(str)
 		if err != nil {
 			return nil, trace.Wrap(err)

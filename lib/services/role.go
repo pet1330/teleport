@@ -17,6 +17,7 @@ limitations under the License.
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -208,7 +209,7 @@ type Access interface {
 	CreateRole(role Role) error
 
 	// UpsertRole creates or updates role
-	UpsertRole(role Role) error
+	UpsertRole(ctx context.Context, role Role) error
 
 	// DeleteAllRoles deletes all roles
 	DeleteAllRoles() error
@@ -217,7 +218,7 @@ type Access interface {
 	GetRole(name string) (Role, error)
 
 	// DeleteRole deletes role by name
-	DeleteRole(name string) error
+	DeleteRole(ctx context.Context, name string) error
 }
 
 const (
@@ -1355,6 +1356,9 @@ type AccessChecker interface {
 	// CanPortForward returns true if this RoleSet can forward ports.
 	CanPortForward() bool
 
+	// PermitX11Forwarding returns true if this RoleSet allows X11 Forwarding.
+	PermitX11Forwarding() bool
+
 	// CertificateFormat returns the most permissive certificate format in a
 	// RoleSet.
 	CertificateFormat() string
@@ -1802,6 +1806,16 @@ func (set RoleSet) CanForwardAgents() bool {
 func (set RoleSet) CanPortForward() bool {
 	for _, role := range set {
 		if BoolDefaultTrue(role.GetOptions().PortForwarding) {
+			return true
+		}
+	}
+	return false
+}
+
+// PermitX11Forwarding returns true if this RoleSet allows X11 Forwarding.
+func (set RoleSet) PermitX11Forwarding() bool {
+	for _, role := range set {
+		if role.GetOptions().PermitX11Forwarding.Value() {
 			return true
 		}
 	}
@@ -2278,6 +2292,7 @@ const RoleSpecV3SchemaTemplate = `{
       "additionalProperties": false,
       "properties": {
         "forward_agent": { "type": ["boolean", "string"] },
+        "permit_x11_forwarding": { "type": ["boolean", "string"] },
         "max_session_ttl": { "type": "string" },
         "port_forwarding": { "type": ["boolean", "string"] },
         "cert_format": { "type": "string" },

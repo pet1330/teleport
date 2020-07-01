@@ -754,7 +754,7 @@ func (s *TLSSuite) TestNopUser(c *check.C) {
 	fixtures.ExpectAccessDenied(c, err)
 }
 
-// TestOwnRole tests that user can read roles assigned to them
+// TestOwnRole tests that user can read roles assigned to them (used by web UI)
 func (s *TLSSuite) TestReadOwnRole(c *check.C) {
 	clt, err := s.server.NewClient(TestAdmin())
 	c.Assert(err, check.IsNil)
@@ -898,10 +898,11 @@ func (s *TLSSuite) TestPasswordCRUD(c *check.C) {
 }
 
 func (s *TLSSuite) TestTokens(c *check.C) {
+	ctx := context.Background()
 	clt, err := s.server.NewClient(TestAdmin())
 	c.Assert(err, check.IsNil)
 
-	out, err := clt.GenerateToken(GenerateTokenRequest{Roles: teleport.Roles{teleport.RoleNode}})
+	out, err := clt.GenerateToken(ctx, GenerateTokenRequest{Roles: teleport.Roles{teleport.RoleNode}})
 	c.Assert(err, check.IsNil)
 	c.Assert(len(out), check.Not(check.Equals), 0)
 }
@@ -1322,6 +1323,7 @@ func (s *TLSSuite) TestWebSessions(c *check.C) {
 
 // TestGetCertAuthority tests certificate authority permissions
 func (s *TLSSuite) TestGetCertAuthority(c *check.C) {
+	ctx := context.Background()
 	// generate server keys for node
 	nodeClt, err := s.server.NewClient(TestIdentity{I: BuiltinRole{Username: "00000000-0000-0000-0000-000000000000", Role: teleport.RoleNode}})
 	c.Assert(err, check.IsNil)
@@ -1352,7 +1354,7 @@ func (s *TLSSuite) TestGetCertAuthority(c *check.C) {
 
 	role := services.RoleForUser(user)
 	role.SetLogins(services.Allow, []string{user.GetName()})
-	err = s.server.Auth().UpsertRole(role)
+	err = s.server.Auth().UpsertRole(ctx, role)
 	c.Assert(err, check.IsNil)
 
 	user.AddRole(role.GetName())
@@ -1446,14 +1448,14 @@ func (s *TLSSuite) TestAccessRequest(c *check.C) {
 	_, err = generateCerts(req.GetName())
 	c.Assert(err, check.NotNil)
 
-	updateCtx := withUpdateBy(context.TODO(), "some-user")
+	ctx := context.Background()
 
 	// verify that user does not have the ability to approve their own request (not a special case, this
 	// user just wasn't created with the necessary roles for request management).
-	c.Assert(userClient.SetAccessRequestState(updateCtx, req.GetName(), services.RequestState_APPROVED), check.NotNil)
+	c.Assert(userClient.SetAccessRequestState(ctx, req.GetName(), services.RequestState_APPROVED), check.NotNil)
 
 	// attempt to apply request in APPROVED state (should succeed)
-	c.Assert(s.server.Auth().SetAccessRequestState(updateCtx, req.GetName(), services.RequestState_APPROVED), check.IsNil)
+	c.Assert(s.server.Auth().SetAccessRequestState(ctx, req.GetName(), services.RequestState_APPROVED), check.IsNil)
 	userCerts, err = generateCerts(req.GetName())
 	c.Assert(err, check.IsNil)
 	// ensure that the requested role was actually applied to the cert
@@ -1462,15 +1464,15 @@ func (s *TLSSuite) TestAccessRequest(c *check.C) {
 	}
 
 	// attempt to apply request in DENIED state (should fail)
-	c.Assert(s.server.Auth().SetAccessRequestState(updateCtx, req.GetName(), services.RequestState_DENIED), check.IsNil)
+	c.Assert(s.server.Auth().SetAccessRequestState(ctx, req.GetName(), services.RequestState_DENIED), check.IsNil)
 	_, err = generateCerts(req.GetName())
 	c.Assert(err, check.NotNil)
 
 	// ensure that once in the DENIED state, a request cannot be set back to PENDING state.
-	c.Assert(s.server.Auth().SetAccessRequestState(updateCtx, req.GetName(), services.RequestState_PENDING), check.NotNil)
+	c.Assert(s.server.Auth().SetAccessRequestState(ctx, req.GetName(), services.RequestState_PENDING), check.NotNil)
 
 	// ensure that once in the DENIED state, a request cannot be set back to APPROVED state.
-	c.Assert(s.server.Auth().SetAccessRequestState(updateCtx, req.GetName(), services.RequestState_APPROVED), check.NotNil)
+	c.Assert(s.server.Auth().SetAccessRequestState(ctx, req.GetName(), services.RequestState_APPROVED), check.NotNil)
 }
 
 func (s *TLSSuite) TestPluginData(c *check.C) {
@@ -1554,6 +1556,7 @@ func (s *TLSSuite) TestPluginData(c *check.C) {
 // TestGenerateCerts tests edge cases around authorization of
 // certificate generation for servers and users
 func (s *TLSSuite) TestGenerateCerts(c *check.C) {
+	ctx := context.Background()
 	priv, pub, err := s.server.Auth().GenerateKeyPair("")
 	c.Assert(err, check.IsNil)
 
@@ -1636,7 +1639,7 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 	nopClient, err := s.server.NewClient(TestNop())
 	c.Assert(err, check.IsNil)
 
-	_, err = nopClient.GenerateUserCerts(context.TODO(), proto.UserCertsRequest{
+	_, err = nopClient.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		PublicKey: pub,
 		Username:  user1.GetName(),
 		Expires:   time.Now().Add(time.Hour).UTC(),
@@ -1652,7 +1655,7 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 	userClient2, err := s.server.NewClient(testUser2)
 	c.Assert(err, check.IsNil)
 
-	_, err = userClient2.GenerateUserCerts(context.TODO(), proto.UserCertsRequest{
+	_, err = userClient2.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		PublicKey: pub,
 		Username:  user1.GetName(),
 		Expires:   time.Now().Add(time.Hour).UTC(),
@@ -1665,7 +1668,7 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 	// User can renew their certificates, however the TTL will be limited
 	// to the TTL of their session for both SSH and x509 certs and
 	// that route to cluster will be encoded in the cert metadata
-	userCerts, err := userClient2.GenerateUserCerts(context.TODO(), proto.UserCertsRequest{
+	userCerts, err := userClient2.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		PublicKey:      pub,
 		Username:       user2.GetName(),
 		Expires:        time.Now().Add(100 * time.Hour).UTC(),
@@ -1695,7 +1698,7 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 	adminClient, err := s.server.NewClient(TestAdmin())
 	c.Assert(err, check.IsNil)
 
-	userCerts, err = adminClient.GenerateUserCerts(context.TODO(), proto.UserCertsRequest{
+	userCerts, err = adminClient.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		PublicKey: pub,
 		Username:  user1.GetName(),
 		Expires:   time.Now().Add(40 * time.Hour).UTC(),
@@ -1710,14 +1713,19 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 	_, exists := parsedCert.Extensions[teleport.CertExtensionPermitAgentForwarding]
 	c.Assert(exists, check.Equals, true)
 
-	// now update role to permit agent forwarding
+	// user should not have X11 forwarding (default setting)
+	_, exists = parsedCert.Extensions[teleport.CertExtensionPermitX11Forwarding]
+	c.Assert(exists, check.Equals, false)
+
+	// now update role to permit agent and X11 forwarding
 	roleOptions := userRole.GetOptions()
 	roleOptions.ForwardAgent = services.NewBool(true)
+	roleOptions.PermitX11Forwarding = services.NewBool(true)
 	userRole.SetOptions(roleOptions)
-	err = s.server.Auth().UpsertRole(userRole)
+	err = s.server.Auth().UpsertRole(ctx, userRole)
 	c.Assert(err, check.IsNil)
 
-	userCerts, err = adminClient.GenerateUserCerts(context.TODO(), proto.UserCertsRequest{
+	userCerts, err = adminClient.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		PublicKey: pub,
 		Username:  user1.GetName(),
 		Expires:   time.Now().Add(1 * time.Hour).UTC(),
@@ -1730,8 +1738,12 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 	_, exists = parsedCert.Extensions[teleport.CertExtensionPermitAgentForwarding]
 	c.Assert(exists, check.Equals, true)
 
+	// user should get X11 forwarding
+	_, exists = parsedCert.Extensions[teleport.CertExtensionPermitX11Forwarding]
+	c.Assert(exists, check.Equals, true)
+
 	// apply HTTP Auth to generate user cert:
-	userCerts, err = adminClient.GenerateUserCerts(context.TODO(), proto.UserCertsRequest{
+	userCerts, err = adminClient.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		PublicKey: pub,
 		Username:  user1.GetName(),
 		Expires:   time.Now().Add(time.Hour).UTC(),
@@ -1746,6 +1758,7 @@ func (s *TLSSuite) TestGenerateCerts(c *check.C) {
 // TestCertificateFormat makes sure that certificates are generated with the
 // correct format.
 func (s *TLSSuite) TestCertificateFormat(c *check.C) {
+	ctx := context.Background()
 	priv, pub, err := s.server.Auth().GenerateKeyPair("")
 	c.Assert(err, check.IsNil)
 
@@ -1786,7 +1799,7 @@ func (s *TLSSuite) TestCertificateFormat(c *check.C) {
 		roleOptions := userRole.GetOptions()
 		roleOptions.CertificateFormat = tt.inRoleCertificateFormat
 		userRole.SetOptions(roleOptions)
-		err := s.server.Auth().UpsertRole(userRole)
+		err := s.server.Auth().UpsertRole(ctx, userRole)
 		c.Assert(err, check.IsNil)
 
 		proxyClient, err := s.server.NewClient(TestBuiltin(teleport.RoleProxy))
@@ -2126,8 +2139,9 @@ func (s *TLSSuite) TestTLSFailover(c *check.C) {
 // TestRegisterCAPin makes sure that registration only works with a valid
 // CA pin.
 func (s *TLSSuite) TestRegisterCAPin(c *check.C) {
+	ctx := context.Background()
 	// Generate a token to use.
-	token, err := s.server.AuthServer.AuthServer.GenerateToken(GenerateTokenRequest{
+	token, err := s.server.AuthServer.AuthServer.GenerateToken(ctx, GenerateTokenRequest{
 		Roles: teleport.Roles{
 			teleport.RoleProxy,
 		},
@@ -2191,8 +2205,9 @@ func (s *TLSSuite) TestRegisterCAPin(c *check.C) {
 // TestRegisterCAPath makes sure registration only works with a valid CA
 // file on disk.
 func (s *TLSSuite) TestRegisterCAPath(c *check.C) {
+	ctx := context.Background()
 	// Generate a token to use.
-	token, err := s.server.AuthServer.AuthServer.GenerateToken(GenerateTokenRequest{
+	token, err := s.server.AuthServer.AuthServer.GenerateToken(ctx, GenerateTokenRequest{
 		Roles: teleport.Roles{
 			teleport.RoleProxy,
 		},

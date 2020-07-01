@@ -92,6 +92,15 @@ const (
 	// SessionServerHostname is the hostname of the server the session occurred on.
 	SessionServerHostname = "server_hostname"
 
+	// SessionServerAddr is the address of the server the session occurred on.
+	SessionServerAddr = "server_addr"
+
+	// SessionStartTime is the timestamp at which the session began.
+	SessionStartTime = "session_start"
+
+	// SessionEndTime is the timestamp at which the session ended.
+	SessionEndTime = "session_stop"
+
 	// SessionEnhancedRecording is used to indicate if the recording was an
 	// enhanced recording or not.
 	SessionEnhancedRecording = "enhanced_recording"
@@ -191,10 +200,6 @@ const (
 	// ResetPasswordTokenTTL is TTL of reset password token.
 	ResetPasswordTokenTTL = "ttl"
 
-	// ActionOnBehalfOf is the name of the user, whom record is being modified:
-	// resetting passwords, creating/updating user, etc.
-	ActionOnBehalfOf = "entity"
-
 	// FieldName contains name, e.g. resource name, etc.
 	FieldName = "name"
 
@@ -209,6 +214,11 @@ const (
 	SubsystemEvent = "subsystem"
 	SubsystemName  = "name"
 	SubsystemError = "exitError"
+
+	// X11 forwarding event
+	X11ForwardEvent   = "x11-forward"
+	X11ForwardSuccess = "success"
+	X11ForwardErr     = "error"
 
 	// Port forwarding event
 	PortForwardEvent   = "port"
